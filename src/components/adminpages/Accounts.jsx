@@ -47,7 +47,10 @@ const ROLE_OPTIONS = [
 ];
 
 export default function Accounts() {
-  const [accounts, setAccounts] = useState(INITIAL_ACCOUNTS);
+  const [accounts, setAccounts] = useState(() =>
+    isSupabaseConfigured ? [] : INITIAL_ACCOUNTS
+  );
+  const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [roleFilter, setRoleFilter] = useState('ALL');
@@ -114,10 +117,11 @@ export default function Accounts() {
 
         if (error) {
           console.error('[SPaC Staff] Error loading staff profiles:', error);
+          if (isMounted) setLoadError(error.message);
           return;
         }
 
-        if (data && data.length > 0 && isMounted) {
+        if (data && isMounted) {
           const mapped = data.map((item) => ({
             id: item.staff_id || `ACC-${item.id.slice(0, 4)}`,
             dbId: item.id,
@@ -142,9 +146,13 @@ export default function Accounts() {
               : 'Today',
           }));
           setAccounts(mapped);
+          setLoadError('');
         }
       } catch (err) {
         console.error('[SPaC Staff] Unexpected error fetching staff profiles:', err);
+        if (isMounted) {
+          setLoadError(err instanceof Error ? err.message : 'Unexpected error loading staff profiles.');
+        }
       }
     }
 
@@ -175,7 +183,6 @@ export default function Accounts() {
         dateCreated: today,
       };
 
-      // TODO: also save to your backend here
       return [newAccount, ...prev];
     });
 
@@ -621,7 +628,9 @@ export default function Accounts() {
               ) : (
                 <tr>
                   <td colSpan={8} className="py-6 text-center text-xs text-[#5f5e5e]">
-                    No accounts found matching your search.
+                    {loadError
+                      ? `Unable to load staff accounts: ${loadError}`
+                      : 'No accounts found matching your search.'}
                   </td>
                 </tr>
               )}

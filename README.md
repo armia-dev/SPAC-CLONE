@@ -64,14 +64,19 @@ Deploy the version-controlled SQL migrations located in `supabase/migrations/` s
 2. `20261016000002_functions_and_triggers.sql` (Sequences, audit triggers, pricing functions)
 3. `20261016000003_rls_policies.sql` (Row Level Security policies)
 4. `20261016000004_initial_seed.sql` (Default court, pricing, settings, and admin provisioning)
+5. `20261016000005_staff_management_rpc.sql` (Staff account creation RPC)
+6. `20261016000006_auth_email_lookup.sql` (Login error distinction: unknown email vs incorrect password)
 
-### 5. Verify Database Schema
+### 5. Staff Account Creation
+The Accounts page calls the `create_staff_account_rpc` PostgreSQL function to create staff accounts. Ensure migration `20261016000005_staff_management_rpc.sql` has been applied to the same Supabase project configured in `.env`.
+
+### 6. Verify Database Schema
 Run the static migrations verification script:
 ```bash
 npm run db:verify
 ```
 
-### 6. Development Server
+### 7. Development Server
 Start the development server:
 ```bash
 npm run dev

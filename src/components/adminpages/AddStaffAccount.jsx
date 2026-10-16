@@ -114,25 +114,28 @@ export default function AddStaffAccount({
 
     try {
       if (isSupabaseConfigured) {
-        // Call authorized server-side RPC to create auth user and staff profile atomically
-        const { data, error } = await supabase.rpc('create_staff_account_rpc', {
-          p_email: cleanEmail,
-          p_password: password,
-          p_full_name: cleanName,
-          p_role: position,
-          p_contact: contactNumber.trim() || null,
+        const { data, error } = await supabase.functions.invoke('create-staff-account', {
+          body: {
+            email: cleanEmail,
+            password: password,
+            fullName: cleanName,
+            role: position,
+            contactNumber: contactNumber.trim() || null,
+          },
         });
 
         if (error) throw error;
+        if (data?.error) throw new Error(data.error);
 
+        const staff = data.staff;
         onAddAccount?.({
-          id: data.staff_id,
-          dbId: data.id,
-          name: data.full_name,
-          email: data.email,
-          role: data.role,
-          status: data.status,
-          contact: contactNumber.trim() || '+63 900 000 0000',
+          id: staff.staff_id,
+          dbId: staff.id,
+          name: staff.full_name,
+          email: staff.email,
+          role: staff.role,
+          status: staff.status,
+          contact: staff.contact_number || '+63 900 000 0000',
           dateAdded: 'Today',
           dateCreated: 'Today',
         });

@@ -83,6 +83,16 @@ serve(async (req) => {
       });
     }
 
+    // Generate the staff ID before creating the Auth user so sequence errors
+    // cannot leave an Auth account without a corresponding staff profile.
+    const { data: staffId, error: staffIdError } = await adminClient.rpc('next_staff_id');
+    if (staffIdError || !staffId) {
+      return new Response(JSON.stringify({ error: staffIdError?.message || 'Failed to generate staff ID' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // 4. Create user in Supabase Auth via adminClient
     const { data: createdAuth, error: createAuthError } = await adminClient.auth.admin.createUser({
       email: email.trim().toLowerCase(),
@@ -98,10 +108,7 @@ serve(async (req) => {
       });
     }
 
-    // 5. Generate next staff_id and insert staff profile
-    const { data: seqData } = await adminClient.rpc('next_staff_id');
-    const staffId = seqData || `ACC-${Date.now().toString().slice(-4)}`;
-
+    // 5. Insert the matching staff profile
     const { data: staffData, error: staffInsertError } = await adminClient
       .from('staff_profiles')
       .insert({
@@ -118,10 +125,12 @@ serve(async (req) => {
       .single();
 
     if (staffInsertError) {
-      // Rollback auth user creation if profile insert failed
-      await adminClient.auth.admin.deleteUser(createdAuth.user.id);
-      return new Response(JSON.stringify({ error: staffInsertError.message }), {
-        status: 400,
+      const { error: cleanupError } = await adminClient.auth.admin.deleteUser(createdAuth.user.id);
+      const message = cleanupError
+        ? `Staff profile creation failed: ${staffInsertError.message}. Auth account cleanup also failed: ${cleanupError.message}.`
+        : `Staff profile creation failed; the Auth account was removed: ${staffInsertError.message}`;
+      return new Response(JSON.stringify({ error: message }), {
+        status: cleanupError ? 500 : 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -130,8 +139,9 @@ serve(async (req) => {
       status: 201,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message || 'Internal server error' }), {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

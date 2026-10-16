@@ -251,9 +251,11 @@ export function AuthProvider({ children }) {
         });
 
         if (error) {
-          let userMsg = 'Invalid email or password.';
+          let userMsg = error.message || 'Unable to sign in. Please try again.';
           if (error.message.includes('Email not confirmed')) {
             userMsg = 'Please verify your email address before signing in.';
+          } else if (error.message === 'Invalid login credentials') {
+            userMsg = 'Invalid email or password.';
           }
           setAuthError(userMsg);
           return { success: false, error: userMsg };
