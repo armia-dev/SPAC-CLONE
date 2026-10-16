@@ -8,6 +8,10 @@ import BookingHistory from './BookingHistory';
 import ProfileMenu from './ProfileMenu';
 import Settings from './Settings';
 import GuestBookingHistory from './GuestBookingHistory'; // TEMP: preview only
+import GuestActions from './GuestActions';
+import Login_customer from './Login_customer';
+import ForgotPassword from './ForgotPassword'; 
+import SignUp from './SignUp';         
 import { useAuth } from '../../context/AuthContext';
 
 const TABS = [
@@ -82,7 +86,13 @@ export default function CustomerMainForm() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [pendingSection, setPendingSection] = useState(null);
+  const [authModal, setAuthModal] = useState(null); // null | 'login' | 'forgot' | 'signup'
   const { user, profile, signOut } = useAuth();
+
+  // No signed-in user = guest (shows "Find your booking" + "Login" instead of the icons)
+  const isGuest = !user;
+  // TESTING: uncomment to force the guest view while you're logged in
+  // const isGuest = true;
 
   const currentUser = {
     name: profile?.full_name || user?.email?.split('@')[0] || USER.name,
@@ -102,6 +112,14 @@ export default function CustomerMainForm() {
     setActiveTab(id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // Close any auth popup automatically once login succeeds
+  useEffect(() => {
+    if (user) setAuthModal(null);
+  }, [user]);
+
+  // Note: Login_customer, ForgotPassword and Signup each lock page scroll
+  // and handle Escape themselves, so nothing is needed here.
 
   // Scroll once Home has rendered (works whether you were on Home already or not)
   useEffect(() => {
@@ -151,26 +169,35 @@ export default function CustomerMainForm() {
             </div>
 
             <div className="flex items-center gap-3 sm:gap-5">
-              <button
-                type="button"
-                title="History"
-                onClick={() => goToTab('HISTORY')}
-                className={`transition-colors p-1 cursor-pointer hover:text-[#ccff00] ${
-                  activeTab === 'HISTORY' ? 'text-[#ccff00]' : 'text-white'
-                }`}
-              >
-                <History className="w-5 h-5 stroke-[1.8]" />
-              </button>
-              <button type="button" title="Notifications" className="text-white hover:text-[#ccff00] transition-colors p-1 cursor-pointer">
-                <Bell className="w-5 h-5 stroke-[1.8]" />
-              </button>
+              {isGuest ? (
+                <GuestActions
+                  onFindBooking={() => goToTab('GUEST')}
+                  onLogin={() => setAuthModal('login')}
+                />
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    title="History"
+                    onClick={() => goToTab('HISTORY')}
+                    className={`transition-colors p-1 cursor-pointer hover:text-[#ccff00] ${
+                      activeTab === 'HISTORY' ? 'text-[#ccff00]' : 'text-white'
+                    }`}
+                  >
+                    <History className="w-5 h-5 stroke-[1.8]" />
+                  </button>
+                  <button type="button" title="Notifications" className="text-white hover:text-[#ccff00] transition-colors p-1 cursor-pointer">
+                    <Bell className="w-5 h-5 stroke-[1.8]" />
+                  </button>
 
-              {/* Settings opens from the profile section inside this menu */}
-              <ProfileMenu
-                user={currentUser}
-                onLogout={signOut}
-                onOpenProfile={() => goToTab('SETTINGS')}
-              />
+                  {/* Settings opens from the profile section inside this menu */}
+                  <ProfileMenu
+                    user={currentUser}
+                    onLogout={signOut}
+                    onOpenProfile={() => goToTab('SETTINGS')}
+                  />
+                </>
+              )}
 
               <button
                 type="button"
@@ -356,7 +383,31 @@ export default function CustomerMainForm() {
         </div>
       </footer>
       )}
-            {/* TEMP: preview button, delete me */}
+
+      {/* Customer auth popups (opened by the guest "Login" button) */}
+      {authModal === 'login' && (
+        <Login_customer
+          onClose={() => setAuthModal(null)}
+          onForgot={() => setAuthModal('forgot')}
+          onSignUp={() => setAuthModal('signup')}
+        />
+      )}
+
+      {authModal === 'forgot' && (
+        <ForgotPassword
+          onClose={() => setAuthModal(null)}
+          onBack={() => setAuthModal('login')}
+        />
+      )}
+
+      {authModal === 'signup' && (
+        <SignUp
+          onClose={() => setAuthModal(null)}          // X button, backdrop click, Escape
+          onSignIn={() => setAuthModal('login')}      // "Already have an account? Sign in"
+        />
+      )}
+
+      {/* TEMP: preview button, delete me */}
       <button
         type="button"
         onClick={() => goToTab('GUEST')}
@@ -367,4 +418,3 @@ export default function CustomerMainForm() {
     </div>
   );
 }
-    
