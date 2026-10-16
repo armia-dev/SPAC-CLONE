@@ -1,0 +1,8 @@
+{
+  "name": "Saranay Pickleball Court Booking",
+  "description": "Court booking, scheduling, and management system for Saranay Pickleball Court.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
