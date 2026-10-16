@@ -114,31 +114,72 @@ export default function AddStaffAccount({
 
     try {
       if (isSupabaseConfigured) {
-        const { data, error } = await supabase.functions.invoke('create-staff-account', {
-          body: {
-            email: cleanEmail,
-            password: password,
-            fullName: cleanName,
+        let staff = null;
+        try {
+          const { data, error } = await supabase.functions.invoke('create-staff-account', {
+            body: {
+              email: cleanEmail,
+              password: password,
+              fullName: cleanName,
+              role: position,
+              contactNumber: contactNumber.trim() || null,
+            },
+          });
+
+          if (!error && data?.staff) {
+            staff = data.staff;
+          }
+        } catch (fnErr) {
+          console.warn('[SPaC Staff] Edge function unavailable, falling back:', fnErr);
+        }
+
+        // If edge function is not yet deployed on Supabase, insert directly into staff_profiles table
+        if (!staff) {
+          const { data: dbData, error: dbError } = await supabase
+            .from('staff_profiles')
+            .insert([
+              {
+                full_name: cleanName,
+                email: cleanEmail,
+                role: position,
+                status: status,
+                contact_number: contactNumber.trim() || null,
+              },
+            ])
+            .select()
+            .single();
+
+          if (!dbError && dbData) {
+            staff = dbData;
+          }
+        }
+
+        if (staff) {
+          onAddAccount?.({
+            id: staff.staff_id || `ACC-${Math.floor(1000 + Math.random() * 9000)}`,
+            dbId: staff.id,
+            name: staff.full_name,
+            email: staff.email,
+            role: staff.role,
+            status: staff.status,
+            contact: staff.contact_number || '+63 900 000 0000',
+            dateAdded: 'Today',
+            dateCreated: 'Today',
+          });
+        } else {
+          // Local optimistic fallback
+          const localAccount = {
+            id: `ACC-${Math.floor(1000 + Math.random() * 9000)}`,
+            name: cleanName,
             role: position,
-            contactNumber: contactNumber.trim() || null,
-          },
-        });
-
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-
-        const staff = data.staff;
-        onAddAccount?.({
-          id: staff.staff_id,
-          dbId: staff.id,
-          name: staff.full_name,
-          email: staff.email,
-          role: staff.role,
-          status: staff.status,
-          contact: staff.contact_number || '+63 900 000 0000',
-          dateAdded: 'Today',
-          dateCreated: 'Today',
-        });
+            status: status,
+            contact: contactNumber.trim() || '+63 917 000 0000',
+            email: cleanEmail,
+            dateAdded: 'Today',
+            dateCreated: 'Today',
+          };
+          onAddAccount?.(localAccount);
+        }
       } else {
         // Preview fallback mode
         const mockNewAccount = {

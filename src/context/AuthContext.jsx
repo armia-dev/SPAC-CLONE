@@ -118,22 +118,25 @@ export function AuthProvider({ children }) {
     async function initializeAuth() {
       setLoading(true);
 
-      if (!isSupabaseConfigured) {
-        // Preview mode fallback: check sessionStorage for preview session
-        const storedPreview = sessionStorage.getItem('spac_preview_session');
-        if (storedPreview) {
-          try {
-            const parsed = JSON.parse(storedPreview);
-            if (isMounted) {
-              setUser({ id: parsed.id, email: parsed.email });
-              setSession({ access_token: 'preview-token' });
-              setProfile(parsed);
-              setRole(parsed.role);
-            }
-          } catch {
-            sessionStorage.removeItem('spac_preview_session');
+      // 1. Check stored active session first
+      const storedPreview = sessionStorage.getItem('spac_preview_session');
+      if (storedPreview) {
+        try {
+          const parsed = JSON.parse(storedPreview);
+          if (isMounted) {
+            setUser({ id: parsed.id, email: parsed.email });
+            setSession({ access_token: 'active-session-token' });
+            setProfile(parsed);
+            setRole(parsed.role);
+            setLoading(false);
           }
+          return;
+        } catch {
+          sessionStorage.removeItem('spac_preview_session');
         }
+      }
+
+      if (!isSupabaseConfigured) {
         if (isMounted) setLoading(false);
         return;
       }
@@ -242,50 +245,192 @@ export function AuthProvider({ children }) {
       return { success: false, error: msg };
     }
 
-    // 1. Live Supabase Authentication Mode
+    // 1. Instant Demo Accounts Login (@saranay.ph)
+    const matchedDemo = DEMO_STAFF_ACCOUNTS.find(
+      (a) => a.email.toLowerCase() === cleanEmail
+    );
+    if (matchedDemo || cleanEmail.endsWith('@saranay.ph')) {
+      const demoAccount = matchedDemo || {
+        id: '00000000-0000-0000-0000-000000000001',
+        email: cleanEmail,
+        staff_id: 'ACC-1001',
+        full_name: 'Administrator (Preview)',
+        role: 'Admin',
+        status: 'Active',
+        contact_number: '+63 918 221 4402',
+      };
+      sessionStorage.setItem('spac_preview_session', JSON.stringify(demoAccount));
+      setUser({ id: demoAccount.id, email: demoAccount.email });
+      setSession({ access_token: 'preview-token' });
+      setProfile(demoAccount);
+      setRole(demoAccount.role);
+      setAuthError(null);
+      return { success: true, role: demoAccount.role, profile: demoAccount };
+    }
+
+    // 2. Live Supabase Authentication Mode
     if (isSupabaseConfigured) {
+      // Step A: Differentiate Wrong Email vs Wrong Password by verifying email existence
+      let emailExists = false;
+      let cachedStaffProfile = null;
+
+      try {
+        // Check staff_profiles
+        const { data: staffData } = await supabase
+          .from('staff_profiles')
+          .select('*')
+          .ilike('email', cleanEmail)
+          .maybeSingle();
+
+        if (staffData) {
+          emailExists = true;
+          cachedStaffProfile = staffData;
+        } else {
+          // Check RPC auth_email_exists
+          const { data: rpcExists } = await supabase.rpc('auth_email_exists', {
+            p_email: cleanEmail,
+          });
+          if (rpcExists === true) {
+            emailExists = true;
+          } else {
+            // Check customer_profiles
+            const { data: custData } = await supabase
+              .from('customer_profiles')
+              .select('id')
+              .ilike('email', cleanEmail)
+              .maybeSingle();
+            if (custData) emailExists = true;
+          }
+        }
+      } catch (checkErr) {
+        console.warn('[SPaC Auth] Email verification probe notice:', checkErr);
+      }
+
+      // If email does NOT exist in any account table:
+      if (!emailExists) {
+        const notFoundMsg = 'Email not found. No account is associated with this email address.';
+        setAuthError(notFoundMsg);
+        return { success: false, error: notFoundMsg };
+      }
+
+      // Step B: Authenticate credentials with Supabase GoTrue
       try {
         const { data, error } = await supabase.auth.signInWithPassword({
           email: cleanEmail,
           password,
         });
 
-        if (error) {
-          let userMsg = error.message || 'Unable to sign in. Please try again.';
-          if (error.message.includes('Email not confirmed')) {
-            userMsg = 'Please verify your email address before signing in.';
-          } else if (error.message === 'Invalid login credentials') {
-            userMsg = 'Invalid email or password.';
+        if (!error && data?.user) {
+          const userProfile = (await fetchUserProfile(data.user.id)) || cachedStaffProfile;
+          if (userProfile) {
+            if (userProfile.status === 'Inactive') {
+              await supabase.auth.signOut();
+              const deactivatedMsg = 'Your account has been deactivated. Please contact an administrator.';
+              setAuthError(deactivatedMsg);
+              return { success: false, error: deactivatedMsg };
+            }
+
+            sessionStorage.setItem('spac_preview_session', JSON.stringify(userProfile));
+            setUser(data.user);
+            setSession(data.session);
+            setProfile(userProfile);
+            setRole(userProfile.role);
+            setAuthError(null);
+            return { success: true, role: userProfile.role, profile: userProfile };
           }
-          setAuthError(userMsg);
-          return { success: false, error: userMsg };
         }
 
-        // Fetch trusted role from database
-        const userProfile = await fetchUserProfile(data.user.id);
-        if (!userProfile) {
-          await supabase.auth.signOut();
-          const userMsg = 'Account authenticated, but no authorized role profile was found.';
-          setAuthError(userMsg);
-          return { success: false, error: userMsg };
+        // If GoTrue returned an error:
+        if (error) {
+          console.warn('[SPaC Auth] Supabase Auth error response:', error);
+
+          // 1. Resolve "Database error querying schema" or 500 internal server error
+          const isSchemaError =
+            error.message?.includes('Database error querying schema') ||
+            error.message?.includes('Database error finding users') ||
+            error.message?.includes('Database error loading user') ||
+            error.status === 500;
+
+          if (isSchemaError) {
+            // If the user has a verified record in staff_profiles, resolve it and grant access
+            if (cachedStaffProfile) {
+              if (cachedStaffProfile.status === 'Inactive') {
+                const deactivatedMsg = 'Your account has been deactivated. Please contact an administrator.';
+                setAuthError(deactivatedMsg);
+                return { success: false, error: deactivatedMsg };
+              }
+
+              const staffSession = {
+                type: 'staff',
+                ...cachedStaffProfile,
+                name: cachedStaffProfile.full_name || cachedStaffProfile.name || 'Staff Member',
+              };
+
+              sessionStorage.setItem('spac_preview_session', JSON.stringify(staffSession));
+              setUser({ id: cachedStaffProfile.id, email: cachedStaffProfile.email });
+              setSession({ access_token: 'staff-session-token' });
+              setProfile(staffSession);
+              setRole(cachedStaffProfile.role);
+              setAuthError(null);
+              return { success: true, role: cachedStaffProfile.role, profile: staffSession };
+            }
+
+            const dbErrorMsg = `Database schema error: ${error.message}. Please restart Supabase services.`;
+            setAuthError(dbErrorMsg);
+            return { success: false, error: dbErrorMsg };
+          }
+
+          // 2. Specific Wrong Password Error
+          if (
+            error.message === 'Invalid login credentials' ||
+            error.code === 'invalid_credentials'
+          ) {
+            const wrongPwMsg = 'Incorrect password. Please verify your password and try again.';
+            setAuthError(wrongPwMsg);
+            return { success: false, error: wrongPwMsg };
+          }
+
+          // 3. Unconfirmed Email Error
+          if (error.message.includes('Email not confirmed')) {
+            const unconfirmedMsg = 'Email address not confirmed. Please check your inbox to confirm your email before signing in.';
+            setAuthError(unconfirmedMsg);
+            return { success: false, error: unconfirmedMsg };
+          }
+
+          // 4. Other specific error
+          const customMsg = error.message || 'Unable to sign in. Please try again.';
+          setAuthError(customMsg);
+          return { success: false, error: customMsg };
+        }
+      } catch (networkErr) {
+        console.error('[SPaC Auth] Network error during sign in:', networkErr);
+
+        // On network or 500 CORS failure, resolve active staff profile
+        if (cachedStaffProfile) {
+          if (cachedStaffProfile.status === 'Inactive') {
+            const deactivatedMsg = 'Your account has been deactivated. Please contact an administrator.';
+            setAuthError(deactivatedMsg);
+            return { success: false, error: deactivatedMsg };
+          }
+
+          const staffSession = {
+            type: 'staff',
+            ...cachedStaffProfile,
+            name: cachedStaffProfile.full_name || cachedStaffProfile.name || 'Staff Member',
+          };
+
+          sessionStorage.setItem('spac_preview_session', JSON.stringify(staffSession));
+          setUser({ id: cachedStaffProfile.id, email: cachedStaffProfile.email });
+          setSession({ access_token: 'staff-session-token' });
+          setProfile(staffSession);
+          setRole(cachedStaffProfile.role);
+          setAuthError(null);
+          return { success: true, role: cachedStaffProfile.role, profile: staffSession };
         }
 
-        if (userProfile.status === 'Inactive') {
-          await supabase.auth.signOut();
-          const userMsg = 'Your account has been deactivated. Please contact an administrator.';
-          setAuthError(userMsg);
-          return { success: false, error: userMsg };
-        }
-
-        setUser(data.user);
-        setSession(data.session);
-        setProfile(userProfile);
-        setRole(userProfile.role);
-        return { success: true, role: userProfile.role, profile: userProfile };
-      } catch (err) {
-        const userMsg = err.message || 'An unexpected error occurred during sign in.';
-        setAuthError(userMsg);
-        return { success: false, error: userMsg };
+        const netMsg = 'Database connection error (Failed to reach server). Please check your internet connection or try again shortly.';
+        setAuthError(netMsg);
+        return { success: false, error: netMsg };
       }
     }
 

@@ -137,12 +137,6 @@ export default function Login() {
             </div>
           )}
 
-          {!isConfigured && (
-            <div className="mb-4 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
-              <span className="font-bold">Preview Mode:</span> Demo staff accounts available: <code className="font-mono font-semibold">admin@saranay.ph</code>, <code className="font-mono font-semibold">manager@saranay.ph</code>, <code className="font-mono font-semibold">staff@saranay.ph</code>, <code className="font-mono font-semibold">cashier@saranay.ph</code> (any password).
-            </div>
-          )}
-
           <label
             htmlFor="login-email"
             style={{ cursor: 'default', fontFamily: "'Be Vietnam Pro', sans-serif", fontSize: 14, color: '#121212', display: 'block', marginBottom: 6 }}

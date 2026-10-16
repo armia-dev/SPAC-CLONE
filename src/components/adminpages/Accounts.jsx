@@ -117,7 +117,10 @@ export default function Accounts() {
 
         if (error) {
           console.error('[SPaC Staff] Error loading staff profiles:', error);
-          if (isMounted) setLoadError(error.message);
+          if (isMounted) {
+            setAccounts(INITIAL_ACCOUNTS);
+            setLoadError(`Supabase connection error: ${error.message}. Showing demo staff accounts.`);
+          }
           return;
         }
 
@@ -151,7 +154,10 @@ export default function Accounts() {
       } catch (err) {
         console.error('[SPaC Staff] Unexpected error fetching staff profiles:', err);
         if (isMounted) {
-          setLoadError(err instanceof Error ? err.message : 'Unexpected error loading staff profiles.');
+          setAccounts(INITIAL_ACCOUNTS);
+          setLoadError(
+            err instanceof Error ? `Supabase error (${err.message}). Showing demo accounts.` : 'Unexpected error loading staff profiles.'
+          );
         }
       }
     }

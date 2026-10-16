@@ -50,7 +50,9 @@ export default function Login_customer({ onClose, onForgot, onSignUp }) {
   }
 
     const onCloseRef = useRef(onClose)
-    onCloseRef.current = onClose
+    useEffect(() => {
+      onCloseRef.current = onClose
+    }, [onClose])
 
     useEffect(() => {
     const html = document.documentElement

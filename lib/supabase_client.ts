@@ -18,6 +18,15 @@ if (!isSupabaseConfigured && typeof window !== 'undefined') {
   );
 }
 
+const safeFetch: typeof fetch = async (input, init) => {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    console.warn('[SPaC Supabase] Network request failed gracefully:', err);
+    throw err;
+  }
+};
+
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder-project.supabase.co',
   supabaseAnonKey || 'placeholder-anon-key',
@@ -26,6 +35,9 @@ export const supabase = createClient(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
+    },
+    global: {
+      fetch: safeFetch,
     },
   }
 );
